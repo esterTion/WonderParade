@@ -1,0 +1,162 @@
+<meta charset=utf-8>
+<style>
+    body {
+        height: 640px;
+        width: 1136px;
+        border: solid 1px #000;
+        overflow: hidden;
+        position: relative
+    }
+
+    canvas {
+        height: 133px;
+        width: 100%;
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        background: #CCC
+    }
+</style>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.0.4/howler.core.min.js"></script>
+<div style="padding:5px">FPS:<span id=fps></span></div>
+<canvas></canvas>
+<audio src="011.mp3" preload="auto"></audio>
+<script>
+    fetch('0113.wpp').then(r => (r.text().then(data => {
+        let tree = new DOMParser().parseFromString(data, 'text/html');
+        let info = tree.getElementsByTagName('data')[0];
+        let note = tree.getElementsByTagName('note')[0];
+        let bpm = info.getAttribute('bpm');
+        note = note.textContent.replace(/\n/g, '').split(';');
+        parseNote(bpm, note);
+    })));
+    let noteSchedule = [];
+    function parseNote(bpm, note) {
+        let passedNotes = 0;
+        let sectionSize = 4;
+        let sectionInt = 60 / bpm;
+        let prevSec = 0;
+        note.forEach(function (i) {
+            let command = i.split('|');
+            let section = (command.shift() | 0) - 1;
+            passedNotes += (section - prevSec) * sectionSize;
+            let sectionStartTime = passedNotes * sectionInt;
+            command.forEach(function (i) {
+                let detail = i.split(':');
+                let side;
+                switch (detail[0]) {
+                    case 'm':
+                        //mode?
+                        return;
+                    case 's':
+                        //section size
+                        sectionSize = detail[1] | 0;
+                        return;
+                    case '1':
+                        //left side
+                        side = 1;
+                        break;
+                    case '2':
+                        //right side
+                        side = 2;
+                        break;
+                    default:
+                        return;
+                }
+                let noteInt = sectionInt * sectionSize / detail[1].length;
+                let off = 0;
+                detail[1].split('').forEach(function (note) {
+                    off++;
+                    note |= 0;
+                    let type;
+                    switch (note) {
+                        case 0:
+                            return;
+                        case 1:
+                        //single tap
+                        case 2:
+                            //twin tap
+                            type = 'tap';
+                            break;
+                        case 3:
+                        //hold start
+                        case 4:
+                            //twin hold start
+                            type = 'hold';
+                            break;
+                        case 5:
+                            //hold end
+                            type = 'release';
+                            break;
+                        default: return;
+                    }
+                    noteSchedule.push({
+                        time: sectionStartTime + (off - 1) * noteInt,
+                        side,
+                        type,
+                        note
+                    });
+                })
+            });
+            prevSec = section;
+        });
+        noteSchedule.sort(function (a, b) {
+            return a.time - b.time;
+        })
+    }
+    audio = document.querySelector('audio');
+    canvas = document.querySelector('canvas');
+    canvas.width = canvas.offsetWidth * devicePixelRatio;
+    canvas.height = canvas.offsetHeight * devicePixelRatio;
+    (function () {
+        let currentTime = 0;
+        let lastTime = performance.now();
+        let ticking = false;
+        let ctx = canvas.getContext('2d');
+        let fps = 0;
+        function ticker() {
+            if (ticking) return;
+            ticking = true;
+            fps++;
+            currentTime = audio.currentTime;
+            let out = false, left = '\t', right = '\t';
+            noteSchedule.forEach(function (i) {
+                if (i.showed) return;
+                if (i.time < currentTime) {
+                    out = true;
+                    i.showed = true;
+                    switch (i.side) {
+                        case 1:
+                            left = i.type + '\t';
+                            break;
+                        case 2:
+                            right = i.type + '\t';
+                            break;
+                    }
+                }
+            });
+            if (out) {
+                console.log(left + right + currentTime);
+            }
+            ticking = false;
+            requestAnimationFrame(ticker);
+        }
+        requestAnimationFrame(ticker);
+        setInterval(function () {
+            document.getElementById('fps').textContent = fps;
+            fps = 0;
+        }, 1e3)
+    })();
+    window.addEventListener('message', function (e) {
+        if (e.data == 'play') {
+            console.log('received message, start sync play');
+            audio.play();
+        }
+    })
+    window.addEventListener('load', function () {
+        sound = new Howl({
+            src: ['011.mp3']
+        })
+    })
+
+</script>
