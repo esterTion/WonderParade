@@ -1,4 +1,5 @@
 <meta charset=utf-8>
+<title>Wonder Parade</title>
 <style>
     body {
         height: 640px;
@@ -9,48 +10,128 @@
     }
 
     canvas {
-        height: 133px;
+        height: 132px;
         width: 100%;
         position: absolute;
         bottom: 0;
         left: 0;
         background: #CCC
     }
+
+    .diff {
+        padding: 5px;
+        background: #DDD;
+        margin: 5px;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+
+    .diff.select {
+        background: #BBB
+    }
 </style>
-<script async src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.0.4/howler.core.min.js"></script>
+<div style="height:50px">　</div>
+<div><a href="https://itunes.apple.com/cn/app/id1239334316" target=_blank>&copy;Copyright StudioQuare 2017</a></div>
 <div style="padding:5px">FPS:<span id=fps></span></div>
+<div><input type="range" min=0.5 max=4 value=1 step="0.05" onchange="this.parentNode.lastChild.textContent=appearGap=this.value">
+    <span id="appearGap">1</span></div>
+<div id="downloading"></div>
 <canvas></canvas>
-<audio src="011.mp3" preload="auto"></audio>
+<div id="player" style="width:300px;margin:5px"></div>
+<div id="changeMsg" style="white-space:pre-wrap"></div>
 <script>
-    fetch('0113.wpp').then(r => (r.text().then(data => {
-        let tree = new DOMParser().parseFromString(data, 'text/html');
-        let info = tree.getElementsByTagName('data')[0];
-        let note = tree.getElementsByTagName('note')[0];
-        let bpm = info.getAttribute('bpm');
-        note = note.textContent.replace(/\n/g, '').split(';');
-        parseNote(bpm, note);
-    })));
-    let noteSchedule = [];
+    function _(e, t, n) { var r = null; if ("text" === e) return document.createTextNode(t); r = document.createElement(e); for (var l in t) if ("style" === l) for (var a in t.style) r.style[a] = t.style[a]; else if ("className" === l) r.className = t[l]; else if ("event" === l) for (var a in t[l]) r.addEventListener(a, t[l][a]); else r.setAttribute(l, t[l]); if (n) for (var s = 0; s < n.length; s++)null != n[s] && r.appendChild(n[s]); return r }
+    document.head.appendChild(_('script', {
+        src: 'https://estertion.win/wp-content/plugins/light-weight-player/musicplayer.min.js',
+        event: {
+            load: function () {
+                window.player = new MusicPlayer({
+                    element: document.getElementById('player'),
+                    src: 'data:',
+                    id: 'LightWeightPlayer',
+                    borderWidth: '1px',
+                    autoPlay: false,
+                    loop: false,
+                    color: {
+                        'played': 'rgb(255,81,81)',
+                        'buffered': '#EEE',
+                        'blank': '#EEE',
+                        'border': '#DDD'
+                    }
+                })
+                audio = player.audio;
+            }
+        }
+    }))
+    function loadResource(url, param) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        for (var key in param) {
+            xhr[key] = param[key];
+        }
+        xhr.addEventListener('readystatechange', function () {
+            if (this.readyState == 4) {
+                this.dispatchEvent(new Event('downloaded'));
+            }
+        })
+        xhr.send();
+        return xhr;
+    }
+    function loadPattern(song, difficulty) {
+        loadResource('Data/Pattern/' + song + difficulty + '.wpp').addEventListener('downloaded', function () {
+            var data = this.response,
+                tree = new DOMParser().parseFromString(data, 'text/html'),
+                info = tree.getElementsByTagName('data')[0],
+                note = tree.getElementsByTagName('note')[0],
+                bpm = info.getAttribute('bpm');
+            note = note.textContent.replace(/\n/g, '').split(';');
+            parseNote(bpm, note);
+        });
+    }
+    function log(s) {
+        var msg = document.getElementById('changeMsg');
+        var list = msg.textContent.split('\n');
+        list.push(s);
+        list.length > 5 && list.shift();
+        msg.textContent = list.join('\n');
+    }
+    var noteSchedule = [], patternRaw = [];;
     function parseNote(bpm, note) {
-        let passedNotes = 0;
-        let sectionSize = 4;
-        let sectionInt = 60 / bpm;
-        let prevSec = 0;
+        var sectionSize = 4;
+        var sectionInt = 60 / bpm;
+        var prevSec = 0;
+        var prevStartTime = 0;
+        noteSchedule = [];
+        patternRaw = [];
         note.forEach(function (i) {
-            let command = i.split('|');
-            let section = (command.shift() | 0) - 1;
-            passedNotes += (section - prevSec) * sectionSize;
-            let sectionStartTime = passedNotes * sectionInt;
+            var command = i.split('|');
+            var section = (command.shift() | 0);
+            (prevSec === 0) && (prevSec = section);
+            var sectionStartTime = prevStartTime + (section - prevSec) * sectionSize * sectionInt;
+            prevStartTime = sectionStartTime;
+            patternRaw.push({
+                time: sectionStartTime,
+                pattern: i
+            });
+            var message = [];
             command.forEach(function (i) {
-                let detail = i.split(':');
-                let side;
+                var detail = i.split(':');
+                var side;
                 switch (detail[0]) {
                     case 'm':
                         //mode?
+                        message.push('mode set to ' + detail[1]);
                         return;
                     case 's':
                         //section size
                         sectionSize = detail[1] | 0;
+                        message.push('sectionSize set to ' + sectionSize);
+                        return;
+                    case 'b':
+                        //bpm change
+                        bpm = detail[1] | 0;
+                        sectionInt = 60 / bpm;
+                        message.push('bpm set to ' + bpm);
                         return;
                     case '1':
                         //left side
@@ -63,12 +144,12 @@
                     default:
                         return;
                 }
-                let noteInt = sectionInt * sectionSize / detail[1].length;
-                let off = 0;
+                var noteInt = sectionInt * sectionSize / detail[1].length;
+                var off = 0;
                 detail[1].split('').forEach(function (note) {
                     off++;
                     note |= 0;
-                    let type;
+                    var type;
                     switch (note) {
                         case 0:
                             return;
@@ -94,69 +175,307 @@
                         time: sectionStartTime + (off - 1) * noteInt,
                         side,
                         type,
-                        note
+                        note,
+                        message
                     });
+                    message.length && (message = []);
                 })
             });
             prevSec = section;
         });
         noteSchedule.sort(function (a, b) {
             return a.time - b.time;
-        })
+        });
+        var reprocess = [], leftHoldStart = [], rightHoldStart = [];
+        noteSchedule.forEach(function (i) {
+            if (i.type === 'tap') {
+                reprocess.push({
+                    time: i.time,
+                    type: 'point',
+                    side: i.side,
+                    isTwin: (i.note === 2),
+                    message: i.message
+                })
+            } else if (i.type === 'hold') {
+                if (i.side === 1)
+                    leftHoldStart = [i.time, i.note === 4];
+                else
+                    rightHoldStart = [i.time, i.note === 4];
+            } else if (i.type === 'release') {
+                reprocess.push({
+                    time: ((i.side === 2) ? rightHoldStart : leftHoldStart)[0],
+                    end: i.time,
+                    type: 'line',
+                    side: i.side,
+                    isTwin: ((i.side === 2) ? rightHoldStart : leftHoldStart)[1],
+                    message: i.message
+                });
+                if (i.side === 1)
+                    leftHoldStart = [];
+                else
+                    rightHoldStart = [];
+            }
+        });
+        noteSchedule = reprocess;
+        noteSchedule.sort(function (a, b) {
+            return a.time - b.time;
+        });
     }
     audio = document.querySelector('audio');
     canvas = document.querySelector('canvas');
-    canvas.width = canvas.offsetWidth * devicePixelRatio;
-    canvas.height = canvas.offsetHeight * devicePixelRatio;
-    (function () {
-        let currentTime = 0;
-        let lastTime = performance.now();
-        let ticking = false;
-        let ctx = canvas.getContext('2d');
-        let fps = 0;
-        function ticker() {
+    window.addEventListener('resize', function () {
+        canvas.width = canvas.offsetWidth * devicePixelRatio;
+        canvas.height = canvas.offsetHeight * devicePixelRatio;
+    });
+    window.dispatchEvent(new Event('resize'));
+    appearGap = 1;
+    window.addEventListener('load', function () {
+        var currentTime = 0,
+            lastTime = performance.now(),
+            ticking = false,
+            ctx = canvas.getContext('2d'),
+            fps = 0,
+            msgJustNow = [];
+        audio.addEventListener('timeupdate', function () { currentTime = this.currentTime });
+        function tick() { ticking = false; requestAnimationFrame(ticker); }
+        function ticker(now) {
             if (ticking) return;
             ticking = true;
             fps++;
-            currentTime = audio.currentTime;
-            let out = false, left = '\t', right = '\t';
-            noteSchedule.forEach(function (i) {
-                if (i.showed) return;
-                if (i.time < currentTime) {
-                    out = true;
-                    i.showed = true;
-                    switch (i.side) {
-                        case 1:
-                            left = i.type + '\t';
-                            break;
-                        case 2:
-                            right = i.type + '\t';
-                            break;
-                    }
-                }
-            });
-            if (out) {
-                console.log(left + right + currentTime);
+            if (audio.paused) {
+                currentTime = audio.currentTime;
+                lastTime = now;
+                tick();
+                return;
             }
-            ticking = false;
-            requestAnimationFrame(ticker);
+            currentTime += (now - lastTime) / 1e3 * audio.playbackRate;
+            lastTime = now;
+            var toDraw = {
+                left: [],
+                right: [],
+                twin: []
+            },
+                WIDTH = canvas.width,
+                HEIGHT = canvas.height,
+                halfWIDTH = Math.floor(WIDTH / 2),
+                halfHEIGHT = Math.floor(HEIGHT / 2);
+            for (var off = 0; off < noteSchedule.length; off++) {
+                var i = noteSchedule[off];
+                if (i.message.length && i.time < currentTime && i.time > currentTime - .1 && msgJustNow.indexOf(i) === -1) {
+                    log(i.message.join(', ') + '\t' + currentTime);
+                    msgJustNow.push(i);
+                }
+                if (i.type === 'point') {
+                    if (i.time < currentTime)
+                        continue;
+                    if (i.time > currentTime + appearGap + .2)
+                        continue;
+                } else if (i.type === 'line') {
+                    if (i.end < currentTime)
+                        continue;
+                    if (i.time > currentTime + appearGap + .2)
+                        continue;
+                }
+                var a = 0;
+                switch (i.side) {
+                    case 1:
+                        a = -1;
+                        break;
+                    case 2:
+                        a = 1;
+                        break;
+                };
+                var x = Math.floor(WIDTH * (.5 + .5 / appearGap * a * (i.time - currentTime)));
+                var group = i.isTwin ? 'twin' : i.side === 1 ? 'left' : 'right';
+                switch (i.type) {
+                    case 'point':
+                        toDraw[group].push({
+                            type: 'point',
+                            x
+                        })
+                        break;
+                    case 'line':
+                        var dx = (i.end - i.time) * .5 / appearGap * a * WIDTH;
+                        if (i.time < currentTime) {
+                            dx -= halfWIDTH - x;
+                            x = halfWIDTH;
+                        }
+                        toDraw[group].push({
+                            type: 'line',
+                            x,
+                            dx
+                        })
+                        break;
+                }
+            };
+            for (var i = msgJustNow.length - 1; i >= 0; i--) {
+                if (!(msgJustNow[i].time < currentTime && msgJustNow[i].time > currentTime - .1)) {
+                    msgJustNow.splice(i, 1);
+                }
+            }
+            ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            var size = Math.round(36 * devicePixelRatio);
+            if (toDraw.left.length) {
+                ctx.fillStyle = 'rgb(255,81,81)';
+                toDraw.left.forEach(function (i) {
+                    if (i.type === 'point') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (i.type === 'line') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
+                        ctx.beginPath();
+                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                })
+            }
+            if (toDraw.right.length) {
+                ctx.fillStyle = 'rgb(1,184,237)';
+                toDraw.right.forEach(function (i) {
+                    if (i.type === 'point') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (i.type === 'line') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
+                        ctx.beginPath();
+                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                })
+            }
+            if (toDraw.twin.length) {
+                ctx.fillStyle = 'rgb(254,159,1)';
+                toDraw.twin.forEach(function (i) {
+                    if (i.type === 'point') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (i.type === 'line') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
+                        ctx.beginPath();
+                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                })
+            }
+            if (patternRaw.length) {
+                for (var i = 0; i < patternRaw.length; i++) {
+                    if (patternRaw[i].time > currentTime) break;
+                }
+                patternRawDiv.textContent = (patternRaw[i - 1] || { pattern: '' }).pattern + '\n' + (patternRaw[i] || { pattern: '' }).pattern
+            }
+            tick();
         }
-        requestAnimationFrame(ticker);
+        tick();
         setInterval(function () {
             document.getElementById('fps').textContent = fps;
             fps = 0;
-        }, 1e3)
-    })();
+        }, 1e3);
+    });
     window.addEventListener('message', function (e) {
-        if (e.data == 'play') {
+        if (e.data === 'play') {
             console.log('received message, start sync play');
             audio.play();
         }
-    })
-    window.addEventListener('load', function () {
-        sound = new Howl({
-            src: ['011.mp3']
+    });
+    let songBlob = {};
+    function loadSong(song) {
+        if (songBlob[song])
+            return (
+                ((audio.src !== songBlob[song]) && (
+                    audio.src = songBlob[song],
+                    log('Song change to 【' + songSelect.selectedOptions[0].value + '】')
+                )),
+                audio.play()
+            );
+        log('Song change to 【' + songSelect.selectedOptions[0].textContent + '】')
+        var xhr = loadResource('Data/Sound/' + song + '.m4a', { responseType: 'blob' });
+        xhr.addEventListener('progress', function (e) {
+            document.getElementById('downloading').textContent = 'Downloading...' + (e.loaded / e.total * 100).toFixed(2) + '%';
         })
+        xhr.addEventListener('downloaded', function () {
+            setTimeout(function () { document.getElementById('downloading').textContent = ''; }, 3e3)
+            audio.src = URL.createObjectURL(this.response);
+            songBlob[song] = audio.src;
+            audio.play();
+        });
+    }
+    /*
+    window.addEventListener('load', function () {
+        loadSong('002');
+    })*/
+    loadResource('Data/list.wpd').addEventListener('downloaded', function () {
+        var list = new DOMParser().parseFromString(this.response, 'text/html').getElementsByTagName('info')[0].textContent.replace(/\n/g, '').split(';');
+        list.pop();
+        songList = [];
+        list.forEach(function (i) {
+            var info = i.split('|'),
+                song = info[1].substr(0, 3),
+                theme = info[2],
+                basic = info[3],
+                advance = info[4],
+                expert = info[5],
+                title = info[10].substr(3),
+                artist = info[11].substr(3);
+            expert === '0' && (expert = false);
+            songList.push({
+                song,
+                theme,
+                basic,
+                advance,
+                expert,
+                title,
+                artist
+            });
+        })
+        var child = [];
+        songList.forEach(function (i) {
+            if (i.artist === '?') return;
+            var o = _('option', {
+                value: i.song
+            }, [_('text', i.title + ' - ' + i.artist)]);
+            o.song = i;
+            child.push(o);
+        });
+        songSelect = document.body.appendChild(_('select', {
+            name: 'song',
+            event: {
+                change: function () {
+                    song = this.value;
+                    (diffSelect.querySelector('.select') || {}).className = 'diff';
+                    diffSelect.lastChild.style.display = this.selectedOptions[0].song.expert ? 'inline' : 'none';
+                }
+            }
+        }, child));
+        song = '001';
+        diffSelect = document.body.appendChild(_('div', {
+            style: { margin: '10px' },
+            event: {
+                click: function (e) {
+                    if (e.target === this || e.target.classList.contains('select')) return;
+                    (this.querySelector('.select') || {}).className = 'diff';
+                    e.target.className = 'diff select';
+                    loadSong(song);
+                    loadPattern(song, [, 'Basic', 'Advance', 'Expert'].indexOf(e.target.textContent))
+                }
+            }
+        }, [
+                _('span', { className: 'diff' }, [_('text', 'Basic')]),
+                _('span', { className: 'diff' }, [_('text', 'Advance')]),
+                _('span', { className: 'diff' }, [_('text', 'Expert')])
+            ]));
+        patternRawDiv = document.body.appendChild(_('div', { style: { whiteSpace: 'pre-wrap' } }));
     })
 
 </script>
