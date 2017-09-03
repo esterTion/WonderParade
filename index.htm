@@ -6,7 +6,8 @@
         width: 1136px;
         border: solid 1px #000;
         overflow: hidden;
-        position: relative
+        position: relative;
+        font-family: -apple-system, Arial, 'PingFang SC', 'STHeiti Light', 'Hiragino Kaku Gothic ProN', 'Microsoft YaHei', sans-serif
     }
 
     canvas {
@@ -30,6 +31,8 @@
         background: #BBB
     }
 </style>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.0.4/howler.core.min.js" integrity="sha256-X01rV9/R1vbHm3CxMRt6AFMe0Ea9wnpAGsurU3QkZU4="
+    crossorigin="anonymous"></script>
 <div style="height:50px">　</div>
 <div><a href="https://itunes.apple.com/cn/app/id1239334316" target=_blank>&copy;Copyright StudioQuare 2017</a></div>
 <div style="padding:5px">FPS:<span id=fps></span></div>
@@ -41,6 +44,7 @@
 <div id="changeMsg" style="white-space:pre-wrap"></div>
 <script>
     function _(e, t, n) { var r = null; if ("text" === e) return document.createTextNode(t); r = document.createElement(e); for (var l in t) if ("style" === l) for (var a in t.style) r.style[a] = t.style[a]; else if ("className" === l) r.className = t[l]; else if ("event" === l) for (var a in t[l]) r.addEventListener(a, t[l][a]); else r.setAttribute(l, t[l]); if (n) for (var s = 0; s < n.length; s++)null != n[s] && r.appendChild(n[s]); return r }
+    var audio, player, sfx, canvas, appearGap = 1, sfxOn = true, patternRawDiv, songSelect, songList, diffSelect, song = '001';
     document.head.appendChild(_('script', {
         src: 'https://estertion.win/wp-content/plugins/light-weight-player/musicplayer.min.js',
         event: {
@@ -58,11 +62,11 @@
                         'blank': '#EEE',
                         'border': '#DDD'
                     }
-                })
+                });
                 audio = player.audio;
             }
         }
-    }))
+    }));
     function loadResource(url, param) {
         var xhr = new XMLHttpRequest();
         xhr.open('GET', url, true);
@@ -73,7 +77,7 @@
             if (this.readyState == 4) {
                 this.dispatchEvent(new Event('downloaded'));
             }
-        })
+        });
         xhr.send();
         return xhr;
     }
@@ -85,6 +89,8 @@
                 note = tree.getElementsByTagName('note')[0],
                 bpm = info.getAttribute('bpm');
             note = note.textContent.replace(/\n/g, '').split(';');
+            sfx.point.stop();
+            sfx.line.stop();
             parseNote(bpm, note);
         });
     }
@@ -95,7 +101,7 @@
         list.length > 5 && list.shift();
         msg.textContent = list.join('\n');
     }
-    var noteSchedule = [], patternRaw = [];;
+    var noteSchedule = [], patternRaw = [];
     function parseNote(bpm, note) {
         var sectionSize = 4;
         var sectionInt = 60 / bpm;
@@ -179,7 +185,7 @@
                         message
                     });
                     message.length && (message = []);
-                })
+                });
             });
             prevSec = section;
         });
@@ -195,7 +201,7 @@
                     side: i.side,
                     isTwin: (i.note === 2),
                     message: i.message
-                })
+                });
             } else if (i.type === 'hold') {
                 if (i.side === 1)
                     leftHoldStart = [i.time, i.note === 4];
@@ -229,14 +235,18 @@
     });
     window.dispatchEvent(new Event('resize'));
     appearGap = 1;
+    sfxOn = true;
     window.addEventListener('load', function () {
         var currentTime = 0,
             lastTime = performance.now(),
             ticking = false,
             ctx = canvas.getContext('2d'),
             fps = 0,
-            msgJustNow = [];
-        audio.addEventListener('timeupdate', function () { currentTime = this.currentTime });
+            msgJustNow = [],
+            playSfx = function (s) {
+                return sfxOn && sfx[s].play();
+            };
+        audio.addEventListener('timeupdate', function () { currentTime = this.currentTime; });
         function tick() { ticking = false; requestAnimationFrame(ticker); }
         function ticker(now) {
             if (ticking) return;
@@ -250,19 +260,30 @@
             }
             currentTime += (now - lastTime) / 1e3 * audio.playbackRate;
             lastTime = now;
-            var toDraw = {
-                left: [],
-                right: [],
-                twin: []
-            },
+            var toDraw = { left: [], right: [], twin: [] },
                 WIDTH = canvas.width,
                 HEIGHT = canvas.height,
                 halfWIDTH = Math.floor(WIDTH / 2),
-                halfHEIGHT = Math.floor(HEIGHT / 2);
+                halfHEIGHT = Math.floor(HEIGHT / 2),
+                drawer = function (i) {
+                    if (i.type === 'point') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (i.type === 'line') {
+                        ctx.beginPath();
+                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
+                        ctx.beginPath();
+                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                };
             for (var off = 0; off < noteSchedule.length; off++) {
                 var i = noteSchedule[off];
-                if (i.message.length && i.time < currentTime && i.time > currentTime - .1 && msgJustNow.indexOf(i) === -1) {
-                    log(i.message.join(', ') + '\t' + currentTime);
+                if (i.time < currentTime && i.time > currentTime - .1 && msgJustNow.indexOf(i) === -1) {
+                    i.message.length && log(i.message.join(', ') + '\t' + currentTime);
                     msgJustNow.push(i);
                 }
                 if (i.type === 'point') {
@@ -284,7 +305,7 @@
                     case 2:
                         a = 1;
                         break;
-                };
+                }
                 var x = Math.floor(WIDTH * (.5 + .5 / appearGap * a * (i.time - currentTime)));
                 var group = i.isTwin ? 'twin' : i.side === 1 ? 'left' : 'right';
                 switch (i.type) {
@@ -292,7 +313,7 @@
                         toDraw[group].push({
                             type: 'point',
                             x
-                        })
+                        });
                         break;
                     case 'line':
                         var dx = (i.end - i.time) * .5 / appearGap * a * WIDTH;
@@ -304,84 +325,57 @@
                             type: 'line',
                             x,
                             dx
-                        })
+                        });
                         break;
                 }
-            };
-            for (var i = msgJustNow.length - 1; i >= 0; i--) {
-                if (!(msgJustNow[i].time < currentTime && msgJustNow[i].time > currentTime - .1)) {
-                    msgJustNow.splice(i, 1);
-                }
+            }
+            for (i = msgJustNow.length - 1; i >= 0; i--) {
+                if (msgJustNow[i].type === 'point')
+                    !(msgJustNow[i].time < currentTime && msgJustNow[i].time > currentTime - .1) && (playSfx('point'), msgJustNow.splice(i, 1));
+                else if (msgJustNow[i].type === 'line')
+                    msgJustNow[i].time < currentTime - .1 && !msgJustNow[i].sfxId && (msgJustNow[i].sfxId = playSfx('line')), !(msgJustNow[i].time < currentTime && msgJustNow[i].end > currentTime - .1) && (
+                        sfx.line.stop(msgJustNow[i].sfxId), delete msgJustNow[i].sfxId, playSfx('release'), msgJustNow.splice(i, 1)
+                    );
             }
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
             var size = Math.round(36 * devicePixelRatio);
             if (toDraw.left.length) {
                 ctx.fillStyle = 'rgb(255,81,81)';
-                toDraw.left.forEach(function (i) {
-                    if (i.type === 'point') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    } else if (i.type === 'line') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
-                        ctx.beginPath();
-                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                })
+                toDraw.left.forEach(drawer);
             }
             if (toDraw.right.length) {
                 ctx.fillStyle = 'rgb(1,184,237)';
-                toDraw.right.forEach(function (i) {
-                    if (i.type === 'point') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    } else if (i.type === 'line') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
-                        ctx.beginPath();
-                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                })
+                toDraw.right.forEach(drawer);
             }
             if (toDraw.twin.length) {
                 ctx.fillStyle = 'rgb(254,159,1)';
-                toDraw.twin.forEach(function (i) {
-                    if (i.type === 'point') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    } else if (i.type === 'line') {
-                        ctx.beginPath();
-                        ctx.arc(i.x, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                        ctx.fillRect(i.x, halfHEIGHT - size, i.dx, size * 2);
-                        ctx.beginPath();
-                        ctx.arc(i.x + i.dx, halfHEIGHT, size, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                })
+                toDraw.twin.forEach(drawer);
             }
             if (patternRaw.length) {
-                for (var i = 0; i < patternRaw.length; i++) {
+                for (i = 0; i < patternRaw.length; i++) {
                     if (patternRaw[i].time > currentTime) break;
                 }
-                patternRawDiv.textContent = (patternRaw[i - 1] || { pattern: '' }).pattern + '\n' + (patternRaw[i] || { pattern: '' }).pattern
+                patternRawDiv.textContent = (patternRaw[i - 1] || { pattern: '' }).pattern + '\n' + (patternRaw[i] || { pattern: '' }).pattern;
             }
             tick();
         }
         tick();
         setInterval(function () {
             document.getElementById('fps').textContent = fps;
+            document.title = 'Wonder Parade | FPS:' + fps;
             fps = 0;
         }, 1e3);
+        sfx = {
+            point: new Howl({
+                src: ['Data/Sound/System/p001.mp3']
+            }),
+            line: new Howl({
+                src: ['Data/Sound/System/p002.mp3']
+            }),
+            release: new Howl({
+                src: ['Data/Sound/System/p003.mp3']
+            })
+        };
     });
     window.addEventListener('message', function (e) {
         if (e.data === 'play') {
@@ -389,7 +383,7 @@
             audio.play();
         }
     });
-    let songBlob = {};
+    var songBlob = {};
     function loadSong(song) {
         if (songBlob[song])
             return (
@@ -399,22 +393,18 @@
                 )),
                 audio.play()
             );
-        log('Song change to 【' + songSelect.selectedOptions[0].textContent + '】')
+        log('Song change to 【' + songSelect.selectedOptions[0].textContent + '】');
         var xhr = loadResource('Data/Sound/' + song + '.m4a', { responseType: 'blob' });
         xhr.addEventListener('progress', function (e) {
             document.getElementById('downloading').textContent = 'Downloading...' + (e.loaded / e.total * 100).toFixed(2) + '%';
-        })
+        });
         xhr.addEventListener('downloaded', function () {
-            setTimeout(function () { document.getElementById('downloading').textContent = ''; }, 3e3)
+            setTimeout(function () { document.getElementById('downloading').textContent = ''; }, 3e3);
             audio.src = URL.createObjectURL(this.response);
             songBlob[song] = audio.src;
             audio.play();
         });
     }
-    /*
-    window.addEventListener('load', function () {
-        loadSong('002');
-    })*/
     loadResource('Data/list.wpd').addEventListener('downloaded', function () {
         var list = new DOMParser().parseFromString(this.response, 'text/html').getElementsByTagName('info')[0].textContent.replace(/\n/g, '').split(';');
         list.pop();
@@ -438,7 +428,7 @@
                 title,
                 artist
             });
-        })
+        });
         var child = [];
         songList.forEach(function (i) {
             if (i.artist === '?') return;
@@ -458,7 +448,6 @@
                 }
             }
         }, child));
-        song = '001';
         diffSelect = document.body.appendChild(_('div', {
             style: { margin: '10px' },
             event: {
@@ -467,15 +456,11 @@
                     (this.querySelector('.select') || {}).className = 'diff';
                     e.target.className = 'diff select';
                     loadSong(song);
-                    loadPattern(song, [, 'Basic', 'Advance', 'Expert'].indexOf(e.target.textContent))
+                    loadPattern(song, ['', 'Basic', 'Advance', 'Expert'].indexOf(e.target.textContent));
                 }
             }
-        }, [
-                _('span', { className: 'diff' }, [_('text', 'Basic')]),
-                _('span', { className: 'diff' }, [_('text', 'Advance')]),
-                _('span', { className: 'diff' }, [_('text', 'Expert')])
-            ]));
+        }, [_('span', { className: 'diff' }, [_('text', 'Basic')]), _('span', { className: 'diff' }, [_('text', 'Advance')]), _('span', { className: 'diff' }, [_('text', 'Expert')])]));
         patternRawDiv = document.body.appendChild(_('div', { style: { whiteSpace: 'pre-wrap' } }));
-    })
-
+        document.body.appendChild(_('div', {}, [_('label', {}, [_('input', { type: 'checkbox', checked: true, event: { change: function () { sfxOn = this.checked; } } }), _('text', 'Sound Effect')])]))
+    });
 </script>
